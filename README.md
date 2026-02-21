@@ -1,6 +1,6 @@
 # loop
 
-Dead simple Bun CLI that runs `codex` and `claude` in a loop. The main loop is ~50 lines of easy-to-read code.
+Dead simple Bun CLI that runs `codex` and `claude` in a loop. The [main loop](https://github.com/axeldelafosse/loop/blob/main/src/loop/main.ts#L14) is ~50 lines of easy-to-read code.
 
 ## What this is
 
@@ -20,10 +20,10 @@ This _is not_ an "agent harness" and the goal isn't to re-invent the wheel: `loo
 
 **IMPORTANT**: you SHOULD run this inside a VM. It is NOT safe to run this on your host machine. The agents are running in YOLO mode!
 
-- Use Docker or Lume to create a sandbox VM
+- Use Docker or [Lume](https://cua.ai/docs/lume/guide/getting-started/introduction) to create a sandbox VM
 - Install nvm, node, npm and bun
 - If you plan to use Playwright: `bun x playwright install chromium`
-- Install Codex and Claude
+- Install [Codex](https://github.com/openai/codex) and [Claude](https://code.claude.com/docs/en/overview#get-started)
 - Install Claude "Agent teams" and Codex "Multi-agents" experimental features
 - Install git and gh CLI
 - Create a GitHub fine-grained personal access token
@@ -41,13 +41,6 @@ This _is not_ an "agent harness" and the goal isn't to re-invent the wheel: `loo
 curl -fsSL https://raw.githubusercontent.com/axeldelafosse/loop/main/install.sh | bash
 ```
 
-Pin to a specific version:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/axeldelafosse/loop/main/install.sh | bash -s -- 1.0.2
-```
-
-Accepted installer targets: `stable`, `latest`, or a version (`1.0.2`, `v1.0.2`).
 Installer currently supports macOS and Linux and installs to `~/.local/bin/loop` by default.
 
 ## Quick start
