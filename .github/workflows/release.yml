@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 permissions:
@@ -13,30 +15,40 @@ jobs:
   meta:
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.version.outputs.version }}
-      tag: ${{ steps.version.outputs.tag }}
-      should_release: ${{ steps.tag_check.outputs.should_release }}
+      tag: ${{ steps.tag.outputs.tag }}
+      should_release: ${{ steps.release_check.outputs.should_release }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Read version from package.json
-        id: version
+      - name: Resolve release tag
+        id: tag
         run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "from_tag_push=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           VERSION="$(node -p "require('./package.json').version")"
           if [ -z "$VERSION" ]; then
             echo "Missing package.json version" >&2
             exit 1
           fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "from_tag_push=false" >> "$GITHUB_OUTPUT"
 
-      - name: Skip release when tag already exists
-        id: tag_check
+      - name: Decide whether to release
+        id: release_check
         run: |
-          if git ls-remote --exit-code --tags origin "refs/tags/${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
+          if [ "${{ steps.tag.outputs.from_tag_push }}" = "true" ]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${{ steps.tag.outputs.tag }}" >/dev/null 2>&1; then
             echo "should_release=false" >> "$GITHUB_OUTPUT"
-            echo "Tag ${{ steps.version.outputs.tag }} already exists. Skipping release."
+            echo "Tag ${{ steps.tag.outputs.tag }} already exists. Skipping release."
             exit 0
           fi
           echo "should_release=true" >> "$GITHUB_OUTPUT"
