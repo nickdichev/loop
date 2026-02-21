@@ -1,0 +1,73 @@
+import { runDraftPrStep } from "./pr";
+import { buildWorkPrompt } from "./prompts";
+import { resolveReviewers, runReview } from "./review";
+import { runAgent } from "./runner";
+import type { Options } from "./types";
+import { hasSignal } from "./utils";
+
+export const runLoop = async (task: string, opts: Options): Promise<void> => {
+  const reviewers = resolveReviewers(opts.review, opts.agent);
+  let reviewNotes = "";
+
+  console.log(`\n[loop] PLAN.md:\n\n${task}`);
+
+  for (let iteration = 1; iteration <= opts.maxIterations; iteration++) {
+    const maxLabel = Number.isFinite(opts.maxIterations)
+      ? `/${opts.maxIterations}`
+      : "";
+    console.log(`\n[loop] iteration ${iteration}${maxLabel}`);
+
+    const prompt = buildWorkPrompt(
+      task,
+      opts.doneSignal,
+      opts.proof,
+      reviewNotes
+    );
+    reviewNotes = "";
+
+    const result = await runAgent(opts.agent, prompt, opts);
+    if (result.exitCode !== 0) {
+      throw new Error(
+        `[loop] ${opts.agent} exited with code ${result.exitCode}`
+      );
+    }
+
+    const output = `${result.parsed}\n${result.combined}`;
+    if (!hasSignal(output, opts.doneSignal)) {
+      continue;
+    }
+
+    if (reviewers.length === 0) {
+      console.log(
+        `\n[loop] done signal "${opts.doneSignal}" detected, stopping.`
+      );
+      return;
+    }
+
+    const review = await runReview(reviewers, task, opts);
+    if (review.approved) {
+      await runDraftPrStep(task, opts);
+      console.log(
+        `\n[loop] done signal "${opts.doneSignal}" detected and review passed, stopping.`
+      );
+      return;
+    }
+
+    if (review.consensusFail) {
+      reviewNotes =
+        "Both reviewers requested changes. Decide for each comment whether to address it now. " +
+        `If you skip one, explain why briefly. If both reviews found the same issue, it might be worth addressing.\n\n${review.notes}`;
+      console.log(
+        "\n[loop] both reviews collected. original agent deciding what to address."
+      );
+      continue;
+    }
+
+    reviewNotes = review.notes || "Reviewer found more work to do.";
+    console.log("\n[loop] review found more work. continuing loop.");
+  }
+
+  console.log(
+    `\n[loop] reached max iterations (${opts.maxIterations}), stopping.`
+  );
+};

@@ -1,0 +1,22 @@
+{
+  "name": "loop",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "bun build --compile --outfile loop src/loop.ts",
+    "install": "bun run build && mkdir -p \"$HOME/.local/bin\" && ln -sf \"$PWD/loop\" \"$HOME/.local/bin/loop\" && echo \"Installed loop -> $HOME/.local/bin/loop\"",
+    "check": "ultracite check",
+    "fix": "ultracite fix"
+  },
+  "bin": {
+    "loop": "./src/loop.ts"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.0",
+    "@types/node": "^25.3.0",
+    "bun-types": "^1.3.9",
+    "typescript": "^5.9.3",
+    "ultracite": "^7.2.3"
+  }
+}
