@@ -52,6 +52,8 @@ jobs:
             asset_name: loop-linux-x64
           - os: macos-15-intel
             asset_name: loop-macos-x64
+          - os: macos-15
+            asset_name: loop-macos-arm64
           - os: windows-latest
             asset_name: loop-windows-x64.exe
 

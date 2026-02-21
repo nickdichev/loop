@@ -85,7 +85,7 @@ source ~/.zshrc
 
 - CI runs on every push and pull request (`.github/workflows/ci.yml`)
 - Releases run on every push to `main` (`.github/workflows/release.yml`)
-- Release artifacts include compiled binaries for Linux, macOS, and Windows
+- Release artifacts include compiled binaries for Linux, macOS (x64 + arm64), and Windows
 - Release version comes from `package.json` (`v${version}`)
 - If that tag already exists, release is skipped automatically
 
