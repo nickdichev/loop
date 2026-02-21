@@ -63,13 +63,11 @@ Some notes:
 ## Install globally (symlink)
 
 ```bash
-bun run install
+bun run install:global
 loop --help
 ```
 
-This creates:
-
-`~/.local/bin/loop -> /path/to/this/repo/loop`
+This creates `~/.local/bin/loop` on Unix and `~/.local/bin/loop.exe` on Windows.
 
 If `loop` is not found, add this to `~/.zshrc`:
 

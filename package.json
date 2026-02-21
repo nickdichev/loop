@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "build": "bun build --compile --outfile loop src/loop.ts",
-    "install": "bun run build && mkdir -p \"$HOME/.local/bin\" && ln -sf \"$PWD/loop\" \"$HOME/.local/bin/loop\" && echo \"Installed loop -> $HOME/.local/bin/loop\"",
+    "install:global": "bun run build && bun run src/install.ts",
     "check": "ultracite check",
     "fix": "ultracite fix"
   },
