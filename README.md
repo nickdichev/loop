@@ -2,10 +2,12 @@
 
 Dead simple Bun CLI that runs `codex` and `claude` in a loop. The [main loop](https://github.com/axeldelafosse/loop/blob/main/src/loop/main.ts#L14) is ~50 lines of easy-to-read code.
 
+Install:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/axeldelafosse/loop/main/install.sh | bash
 ```
 
+Run:
 ```bash
 loop --prompt "Implement {feature}" --proof "Use {skill} to verify your changes" --worktree
 ```
@@ -37,11 +39,6 @@ This _is not_ an "agent harness" and the goal isn't to re-invent the wheel: `loo
 - Create a GitHub fine-grained personal access token
 - Once you are done, take a snapshot of your "golden image" (e.g. `lume clone`)
 - Now you can even set up Tailscale to SSH remotely to your sandbox
-- By default, `loop` uses the Codex App Server transport (`codex app-server`) to keep a single session alive.
-- Set `CODEX_TRANSPORT=exec` to force the legacy `codex exec --json` path.
-  - Use `exec` when app-server compatibility problems are expected; `loop` will print:
-    `[loop] codex app-server transport failed. Falling back to \`codex exec --json\`.` once per session, and continue with the legacy path.
-  - To permanently force legacy mode for all runs, keep `CODEX_TRANSPORT=exec` set in your environment.
 
 ## Requirements
 
@@ -153,31 +150,31 @@ When running from source (`bun src/loop.ts`), auto-update is disabled — use `g
 
 ```bash
 # use PLAN.md automatically
-./loop --proof "Use {skill} to verify your changes"
+loop --proof "Use {skill} to verify your changes"
 
 # two iteration, raw JSON/event output
-./loop -m 2 --proof "Use {skill} to verify your changes" "Implement {feature}" --format raw
+loop -m 2 --proof "Use {skill} to verify your changes" "Implement {feature}" --format raw
 
 # plain text prompt: auto-creates PLAN.md, then runs from PLAN.md
-./loop --proof "Use {skill} to verify your changes" "Implement {feature}"
+loop --proof "Use {skill} to verify your changes" "Implement {feature}"
 
 # run with claude
-./loop --proof "Use {skill} to verify your changes" --agent claude --prompt PLAN.md
+loop --proof "Use {skill} to verify your changes" --agent claude --prompt PLAN.md
 
 # run review with a single reviewer
-./loop --proof "Use {skill} to verify your changes" "Implement {feature}" --review codex
+loop --proof "Use {skill} to verify your changes" "Implement {feature}" --review codex
 
 # run claudex reviewers when done (default behavior)
-./loop --proof "Use {skill} to verify your changes" "Implement {feature}" --review claudex
+loop --proof "Use {skill} to verify your changes" "Implement {feature}" --review claudex
 
 # run in detached tmux session (good for SSH)
-./loop --tmux --proof "Use {skill} to verify your changes" "Implement {feature}"
+loop --tmux --proof "Use {skill} to verify your changes" "Implement {feature}"
 
 # run in a fresh git worktree automatically
-./loop --worktree --proof "Use {skill} to verify your changes" "Implement {feature}"
+loop --worktree --proof "Use {skill} to verify your changes" "Implement {feature}"
 
 # run in detached tmux session in a fresh git worktree automatically
-./loop --tmux --worktree --proof "Use {skill} to verify your changes" "Implement {feature}"
+loop --tmux --worktree --proof "Use {skill} to verify your changes" "Implement {feature}"
 ```
 
 ## License
