@@ -89,6 +89,42 @@ if ! download_file "$asset_url" "$binary_path"; then
   exit 1
 fi
 
+checksum_url="${asset_url}.sha256"
+checksum_path="$DOWNLOAD_DIR/${asset}.sha256"
+HASH_TOOL=""
+
+if command -v shasum >/dev/null 2>&1; then
+  HASH_TOOL="shasum"
+elif command -v sha256sum >/dev/null 2>&1; then
+  HASH_TOOL="sha256sum"
+else
+  echo "Error: unable to verify SHA256 checksum (shasum or sha256sum is required)" >&2
+  exit 1
+fi
+
+if download_file "$checksum_url" "$checksum_path"; then
+  expected=$(cut -d ' ' -f 1 < "$checksum_path")
+  if [ "$HASH_TOOL" = "shasum" ]; then
+    actual=$(shasum -a 256 "$binary_path" | cut -d ' ' -f 1)
+  elif [ "$HASH_TOOL" = "sha256sum" ]; then
+    actual=$(sha256sum "$binary_path" | cut -d ' ' -f 1)
+  else
+    echo "Error: unknown checksum tool selected: $HASH_TOOL" >&2
+    exit 1
+  fi
+
+  if [ "$expected" != "$actual" ]; then
+    echo "Checksum verification failed!" >&2
+    echo "  expected: $expected" >&2
+    echo "  got:      $actual" >&2
+    exit 1
+  fi
+  echo "Checksum verified."
+else
+  echo "Error: could not download checksum file" >&2
+  exit 1
+fi
+
 mkdir -p "$INSTALL_DIR"
 chmod +x "$binary_path"
 cp "$binary_path" "$TARGET_PATH"
