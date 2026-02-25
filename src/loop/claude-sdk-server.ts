@@ -1,6 +1,7 @@
 import { type Server, type ServerWebSocket, serve, spawn } from "bun";
 import { DEFAULT_CLAUDE_MODEL } from "./constants";
 import { findFreePort } from "./ports";
+import { DETACH_CHILD_PROCESS, killChildProcess } from "./process";
 import type { Options, RunResult } from "./types";
 
 type ExitSignal = "SIGINT" | "SIGTERM";
@@ -92,6 +93,21 @@ const pipeToStderr = (stream: ReadableStream<Uint8Array>): void => {
   pump();
 };
 
+const isValidNdjson = (text: string): boolean => {
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+    try {
+      JSON.parse(trimmed);
+    } catch {
+      return false;
+    }
+  }
+  return true;
+};
+
 let spawnFn: SpawnFn = spawn;
 
 export const claudeSdkInternals = {
@@ -165,6 +181,7 @@ class ClaudeSdkClient {
           url,
         ],
         {
+          detached: DETACH_CHILD_PROCESS,
           env: process.env,
           stderr: "pipe",
           stdout: "pipe",
@@ -210,7 +227,7 @@ class ClaudeSdkClient {
   }
 
   interrupt(signal: ExitSignal): void {
-    this.child?.kill(signal);
+    killChildProcess(this.child, signal);
   }
 
   async close(): Promise<void> {
@@ -232,23 +249,10 @@ class ClaudeSdkClient {
     _ws: ServerWebSocket<WSData>,
     text: string
   ): void {
-    try {
-      const msg = JSON.parse(text);
-      if (
-        msg.type === "message" &&
-        typeof msg.content === "string" &&
-        this.ws
-      ) {
-        this.sendJson({
-          type: "user",
-          message: { role: "user", content: msg.content },
-          parent_tool_use_id: null,
-          session_id: this.sessionId,
-        });
-      }
-    } catch {
-      // ignore parse errors from frontends
+    if (!isValidNdjson(text)) {
+      return;
     }
+    this.ws?.send(text);
   }
 
   private createServer(): void {
@@ -465,7 +469,7 @@ class ClaudeSdkClient {
       throw new Error("claude sdk server not connected");
     }
 
-    return new Promise<RunResult>((resolve, reject) => {
+    const result = await new Promise<RunResult>((resolve, reject) => {
       const timeout = setTimeout(() => {
         if (this.turn) {
           this.turn = undefined;
@@ -480,9 +484,9 @@ class ClaudeSdkClient {
         onParsed,
         onRaw,
         parsed: "",
-        resolve: (result) => {
+        resolve: (r) => {
           clearTimeout(timeout);
-          resolve(result);
+          resolve(r);
         },
         reject: (error) => {
           clearTimeout(timeout);
@@ -497,6 +501,11 @@ class ClaudeSdkClient {
         session_id: this.sessionId,
       });
     });
+
+    // Claude SDK session state is process-bound, so restart per turn to force a
+    // fresh session ID and avoid carrying state across independent loop turns.
+    await this.cleanup();
+    return result;
   }
 
   private async cleanup(): Promise<void> {
@@ -521,7 +530,7 @@ class ClaudeSdkClient {
       this.server = undefined;
     }
     if (this.child) {
-      this.child.kill("SIGTERM");
+      killChildProcess(this.child, "SIGTERM");
       await this.child.exited;
       this.child = undefined;
     }
@@ -547,7 +556,7 @@ class ClaudeSdkClient {
 let singleton: ClaudeSdkClient | undefined;
 
 process.on("exit", () => {
-  singleton?.process?.kill("SIGKILL");
+  killChildProcess(singleton?.process, "SIGKILL");
 });
 
 const getClient = (): ClaudeSdkClient => {

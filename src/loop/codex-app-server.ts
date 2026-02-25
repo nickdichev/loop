@@ -1,5 +1,6 @@
 import { spawn } from "bun";
 import { findFreePort } from "./ports";
+import { DETACH_CHILD_PROCESS, killChildProcess } from "./process";
 import type { Options, RunResult } from "./types";
 
 type ExitSignal = "SIGINT" | "SIGTERM";
@@ -234,7 +235,6 @@ class AppServerClient {
   private started = false;
   private ready = false;
   private requestId = 1;
-  private threadId: string | undefined;
   private readonly pending = new Map<string, PendingRequest>();
   private readonly turns = new Map<string, TurnState>();
   private lock: Promise<void> = Promise.resolve();
@@ -259,6 +259,7 @@ class AppServerClient {
       const child = spawnFn(
         [APP_SERVER_CMD, "app-server", "--listen", listenUrl],
         {
+          detached: DETACH_CHILD_PROCESS,
           env: process.env,
           stderr: "pipe",
           stdin: "pipe",
@@ -305,12 +306,11 @@ class AppServerClient {
         }
       }
       if (this.child) {
-        this.child.kill("SIGTERM");
+        killChildProcess(this.child, "SIGTERM");
         this.child = undefined;
       }
       this.ready = false;
       this.started = false;
-      this.threadId = undefined;
       throw new CodexAppServerFallbackError(
         toError(error).message || "failed to start codex app-server"
       );
@@ -358,7 +358,7 @@ class AppServerClient {
   }
 
   interrupt(signal: ExitSignal): void {
-    this.child?.kill(signal);
+    killChildProcess(this.child, signal);
   }
 
   async close(): Promise<void> {
@@ -378,7 +378,7 @@ class AppServerClient {
       this.ready = false;
       return;
     }
-    this.child.kill("SIGTERM");
+    killChildProcess(this.child, "SIGTERM");
     await this.child.exited;
     this.child = undefined;
     this.ready = false;
@@ -386,9 +386,6 @@ class AppServerClient {
   }
 
   private async ensureThread(model: string): Promise<string> {
-    if (this.threadId) {
-      return this.threadId;
-    }
     const response = await this.sendRequest(METHOD_THREAD_START, {
       model,
       approvalPolicy: "never",
@@ -401,7 +398,6 @@ class AppServerClient {
         "codex app-server returned thread/start without thread id"
       );
     }
-    this.threadId = thread.id;
     return thread.id;
   }
 
@@ -862,7 +858,6 @@ class AppServerClient {
     }
     this.started = false;
     this.ready = false;
-    this.threadId = undefined;
     this.failAll(
       new CodexAppServerFallbackError("codex app-server exited unexpectedly")
     );
@@ -872,7 +867,7 @@ class AppServerClient {
 let singleton: AppServerClient | undefined;
 
 process.on("exit", () => {
-  singleton?.process?.kill("SIGKILL");
+  killChildProcess(singleton?.process, "SIGKILL");
 });
 
 const getClient = (): AppServerClient => {

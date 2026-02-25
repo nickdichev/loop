@@ -17,6 +17,7 @@ import {
 } from "./codex-app-server";
 import { createCodexRenderer } from "./codex-render";
 import { DEFAULT_CLAUDE_MODEL } from "./constants";
+import { DETACH_CHILD_PROCESS, killChildProcess } from "./process";
 import type { Agent, Options, RunResult } from "./types";
 
 type ExitSignal = "SIGINT" | "SIGTERM";
@@ -52,9 +53,17 @@ const runnerState: RunnerState = {
 
 const killChildren = (signal: ExitSignal): void => {
   for (const child of activeChildren) {
-    child.kill(signal);
+    killChildProcess(child, signal);
   }
 };
+
+const killChildrenHard = (): void => {
+  for (const child of activeChildren) {
+    killChildProcess(child, "SIGKILL");
+  }
+};
+
+process.on("exit", killChildrenHard);
 
 const onSigint = (): void => {
   killChildren("SIGINT");
@@ -300,6 +309,7 @@ const runLegacyAgent = async (
 ): Promise<RunResult> => {
   const { args, cmd } = buildCommand(agent, prompt, opts.model);
   const proc = spawn([cmd, ...args], {
+    detached: DETACH_CHILD_PROCESS,
     env: process.env,
     stderr: "pipe",
     stdout: "pipe",
