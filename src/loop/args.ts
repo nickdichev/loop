@@ -52,60 +52,82 @@ const parsePlanReviewValue = (value: string | undefined): PlanReviewMode => {
   throw new Error(`Invalid --review-plan value: ${value}`);
 };
 
+const requireTrimmedValue = (value: string, message: string): string => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error(message);
+  }
+  return trimmed;
+};
+
+const requireFlagValue = (arg: string, value: string | undefined): string => {
+  if (!value || value === "--" || value.startsWith("-")) {
+    throw new Error(`Missing value for ${arg}`);
+  }
+  return value;
+};
+
 const applyValueFlag = (
   flag: ValueFlag,
   value: string,
   opts: Options
 ): void => {
-  if (flag === "agent") {
-    opts.agent = parseAgent(value);
-    return;
-  }
-  if (flag === "prompt") {
-    opts.promptInput = value;
-    return;
-  }
-  if (flag === "max") {
-    const num = Number(value);
-    if (!Number.isInteger(num) || num < 1) {
-      throw new Error(`Invalid --max-iterations value: ${value}`);
+  switch (flag) {
+    case "agent":
+      opts.agent = parseAgent(value);
+      return;
+    case "prompt":
+      opts.promptInput = value;
+      return;
+    case "max": {
+      const num = Number(value);
+      if (!Number.isInteger(num) || num < 1) {
+        throw new Error(`Invalid --max-iterations value: ${value}`);
+      }
+      opts.maxIterations = num;
+      return;
     }
-    opts.maxIterations = num;
-    return;
-  }
-  if (flag === "done") {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      throw new Error(EMPTY_DONE_SIGNAL_ERROR);
+    case "done":
+      opts.doneSignal = requireTrimmedValue(value, EMPTY_DONE_SIGNAL_ERROR);
+      return;
+    case "proof":
+      opts.proof = requireTrimmedValue(
+        value,
+        "Invalid --proof value: cannot be empty"
+      );
+      return;
+    case "codexModel":
+      opts.codexModel = requireTrimmedValue(
+        value,
+        "Invalid --codex-model value: cannot be empty"
+      );
+      return;
+    case "codexReviewerModel":
+      opts.codexReviewerModel = requireTrimmedValue(
+        value,
+        "Invalid --codex-reviewer-model value: cannot be empty"
+      );
+      return;
+    case "claudeReviewerModel":
+      opts.claudeReviewerModel = requireTrimmedValue(
+        value,
+        "Invalid --claude-reviewer-model value: cannot be empty"
+      );
+      return;
+    case "session":
+      opts.sessionId = requireTrimmedValue(
+        value,
+        "Invalid --session value: cannot be empty"
+      );
+      return;
+    case "format":
+      opts.format = parseFormat(value);
+      return;
+    default: {
+      const exhaustive: never = flag;
+      throw new Error(`Unhandled value flag: ${exhaustive}`);
     }
-    opts.doneSignal = trimmed;
-    return;
   }
-  if (flag === "proof") {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      throw new Error("Invalid --proof value: cannot be empty");
-    }
-    opts.proof = trimmed;
-    return;
-  }
-  if (flag === "codexModel") {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      throw new Error("Invalid --codex-model value: cannot be empty");
-    }
-    opts.model = trimmed;
-    return;
-  }
-  if (flag === "session") {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      throw new Error("Invalid --session value: cannot be empty");
-    }
-    opts.sessionId = trimmed;
-    return;
-  }
-  opts.format = parseFormat(value);
 };
 
 const applyOnlyMode = (agent: Agent, opts: Options): void => {
@@ -173,6 +195,46 @@ const parsePlanReviewArg = (
   }
 };
 
+const parseModelArg = (
+  argv: string[],
+  index: number,
+  opts: Options,
+  arg: string
+): number | undefined => {
+  if (arg.startsWith("--codex-model=")) {
+    applyValueFlag("codexModel", arg.slice("--codex-model=".length), opts);
+    return index + 1;
+  }
+  if (arg.startsWith("--codex-reviewer-model=")) {
+    applyValueFlag(
+      "codexReviewerModel",
+      arg.slice("--codex-reviewer-model=".length),
+      opts
+    );
+    return index + 1;
+  }
+  if (arg.startsWith("--claude-reviewer-model=")) {
+    applyValueFlag(
+      "claudeReviewerModel",
+      arg.slice("--claude-reviewer-model=".length),
+      opts
+    );
+    return index + 1;
+  }
+  if (
+    arg === "--codex-model" ||
+    arg === "--codex-reviewer-model" ||
+    arg === "--claude-reviewer-model"
+  ) {
+    applyValueFlag(
+      VALUE_FLAGS[arg],
+      requireFlagValue(arg, argv[index + 1]),
+      opts
+    );
+    return index + 2;
+  }
+};
+
 const consumeArg = (
   argv: string[],
   index: number,
@@ -197,9 +259,9 @@ const consumeArg = (
     return { nextIndex: argv.length, stop: true, onlyAgent };
   }
 
-  if (arg.startsWith("--codex-model=")) {
-    applyValueFlag("codexModel", arg.slice("--codex-model=".length), opts);
-    return { nextIndex: index + 1, stop: false, onlyAgent };
+  const modelNextIndex = parseModelArg(argv, index, opts, arg);
+  if (modelNextIndex !== undefined) {
+    return { nextIndex: modelNextIndex, stop: false, onlyAgent };
   }
 
   const modeAgent = parseOnlyModeFlag(arg);
@@ -263,7 +325,7 @@ export const parseArgs = (argv: string[]): Options => {
     proof: "",
     format: "pretty",
     maxIterations: Number.POSITIVE_INFINITY,
-    model: env.LOOP_CODEX_MODEL ?? DEFAULT_CODEX_MODEL,
+    codexModel: env.LOOP_CODEX_MODEL ?? DEFAULT_CODEX_MODEL,
     review: "claudex",
     tmux: false,
     worktree: false,
