@@ -4,6 +4,7 @@ import type { Options, RunResult } from "../../src/loop/types";
 
 interface AppServerModule {
   CodexAppServerFallbackError: typeof Error;
+  CodexAppServerUnexpectedExitError: typeof Error;
 }
 
 const CODEX_TRANSPORT_ENV = "CODEX_TRANSPORT";
@@ -36,8 +37,11 @@ const makeOptions = (opts: Partial<Options> = {}): Options => ({
 });
 
 class RunnerCodexFallbackError extends Error {}
+class RunnerCodexUnexpectedExitError extends RunnerCodexFallbackError {}
 const appServerFallback: AppServerModule["CodexAppServerFallbackError"] =
   RunnerCodexFallbackError;
+const appServerUnexpectedExit: AppServerModule["CodexAppServerUnexpectedExitError"] =
+  RunnerCodexUnexpectedExitError;
 
 const hasAppServerProcess: MockFn<() => boolean> = mock(() => false);
 const interruptAppServer: MockFn<(signal: "SIGINT" | "SIGTERM") => void> = mock(
@@ -112,6 +116,7 @@ const installCodexServerMock = (): void => {
     CODEX_TRANSPORT_ENV,
     CODEX_TRANSPORT_EXEC,
     CodexAppServerFallbackError: appServerFallback,
+    CodexAppServerUnexpectedExitError: appServerUnexpectedExit,
     hasAppServerProcess,
     interruptAppServer,
     runCodexTurn,
@@ -342,6 +347,79 @@ test("runAgent preserves nested delta newline content in pretty mode", async () 
     expect(writes.join("")).toContain("Heading\n- one\n- two\n");
   } finally {
     process.stdout.write = originalWrite;
+  }
+});
+
+test("runAgent retries once after an unexpected app-server exit", async () => {
+  let attempts = 0;
+  runCodexTurn.mockImplementation((_prompt, _opts, callbacks) => {
+    attempts += 1;
+    if (attempts === 1) {
+      callbacks.onRaw(
+        JSON.stringify({
+          method: "item/agentMessage/delta",
+          params: { delta: "partial output" },
+        })
+      );
+      throw new appServerUnexpectedExit("codex app-server exited unexpectedly");
+    }
+    callbacks.onRaw(
+      JSON.stringify({
+        method: "item/agentMessage/delta",
+        params: { delta: "final output" },
+      })
+    );
+    return Promise.resolve(makeResult());
+  });
+
+  const originalError = console.error;
+  const errorSpy = mock(() => undefined);
+  console.error = errorSpy;
+
+  try {
+    const result = await runAgent("codex", "say hi", makeOptions());
+
+    expect(result.exitCode).toBe(0);
+    expect(result.parsed).toBe("final output");
+    expect(startAppServer).toHaveBeenCalledTimes(2);
+    expect(runCodexTurn).toHaveBeenCalledTimes(2);
+    expect(runLegacyAgent).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[loop] codex app-server exited unexpectedly. Restarting app-server and retrying."
+    );
+  } finally {
+    console.error = originalError;
+  }
+});
+
+test("runAgent falls back after retrying an unexpected app-server exit", async () => {
+  runCodexTurn.mockImplementation(() => {
+    throw new appServerUnexpectedExit("codex app-server exited unexpectedly");
+  });
+
+  const originalError = console.error;
+  const errorSpy = mock(() => undefined);
+  console.error = errorSpy;
+
+  try {
+    const result = await runAgent("codex", "say hi", makeOptions());
+
+    expect(result.exitCode).toBe(0);
+    expect(startAppServer).toHaveBeenCalledTimes(2);
+    expect(runCodexTurn).toHaveBeenCalledTimes(2);
+    expect(runLegacyAgent).toHaveBeenCalledTimes(1);
+    expect(errorSpy).toHaveBeenCalledTimes(2);
+    expect(errorSpy).toHaveBeenNthCalledWith(
+      1,
+      "[loop] codex app-server exited unexpectedly. Restarting app-server and retrying."
+    );
+    expect(errorSpy).toHaveBeenNthCalledWith(
+      2,
+      "[loop] codex app-server transport failed. Falling back to `codex exec --json`."
+    );
+  } finally {
+    console.error = originalError;
   }
 });
 

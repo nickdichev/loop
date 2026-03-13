@@ -9,6 +9,7 @@ import {
   CODEX_TRANSPORT_ENV,
   CODEX_TRANSPORT_EXEC,
   CodexAppServerFallbackError,
+  CodexAppServerUnexpectedExitError,
   hasAppServerProcess,
   interruptAppServer,
   runCodexTurn,
@@ -43,6 +44,9 @@ const SIGNAL_EXIT_CODES: Record<ExitSignal, number> = {
   SIGINT: 130,
   SIGTERM: 143,
 };
+const APP_SERVER_RETRY_LIMIT = 1;
+const APP_SERVER_RETRY_LOG =
+  "[loop] codex app-server exited unexpectedly. Restarting app-server and retrying.";
 
 const activeChildren = new Set<ReturnType<typeof spawn>>();
 let activeAppServerRuns = 0;
@@ -270,6 +274,49 @@ const appendParsedLine = (
   };
 };
 
+const isRetryableAppServerError = (error: unknown): boolean =>
+  error instanceof CodexAppServerUnexpectedExitError;
+
+const runCodexAppServerAttempt = async (
+  prompt: string,
+  opts: Options,
+  sessionId?: string
+): Promise<RunResult> => {
+  const renderer = createCodexRenderer({
+    format: opts.format,
+    write: (text) => {
+      process.stdout.write(text);
+    },
+  });
+
+  try {
+    await startAppServer();
+  } catch (error) {
+    if (process.env[CODEX_TRANSPORT_ENV] === CODEX_TRANSPORT_EXEC) {
+      throw error;
+    }
+    throw new CodexAppServerFallbackError(
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+
+  const result = await runCodexTurn(
+    prompt,
+    opts,
+    { onRaw: renderer.onRawLine },
+    sessionId
+  );
+  const finalParsed = result.parsed || renderer.getParsed();
+  if (
+    opts.format === "pretty" &&
+    renderer.wrotePretty() &&
+    !finalParsed.endsWith("\n")
+  ) {
+    process.stdout.write("\n");
+  }
+  return { ...result, parsed: finalParsed };
+};
+
 const runCodexAgent = async (
   prompt: string,
   opts: Options,
@@ -289,42 +336,24 @@ const runCodexAgent = async (
     );
   }
 
-  const renderer = createCodexRenderer({
-    format: runOpts.format,
-    write: (text) => {
-      process.stdout.write(text);
-    },
-  });
-
   activeAppServerRuns += 1;
   syncSignalHandlers();
   try {
-    try {
-      await startAppServer();
-    } catch (error) {
-      if (process.env[CODEX_TRANSPORT_ENV] === CODEX_TRANSPORT_EXEC) {
-        throw error;
+    let attempts = 0;
+    while (true) {
+      try {
+        return await runCodexAppServerAttempt(prompt, runOpts, sessionId);
+      } catch (error) {
+        if (
+          attempts >= APP_SERVER_RETRY_LIMIT ||
+          !isRetryableAppServerError(error)
+        ) {
+          throw error;
+        }
+        attempts += 1;
+        console.error(APP_SERVER_RETRY_LOG);
       }
-      throw new CodexAppServerFallbackError(
-        error instanceof Error ? error.message : String(error)
-      );
     }
-
-    const result = await runCodexTurn(
-      prompt,
-      runOpts,
-      { onRaw: renderer.onRawLine },
-      sessionId
-    );
-    const finalParsed = result.parsed || renderer.getParsed();
-    if (
-      runOpts.format === "pretty" &&
-      renderer.wrotePretty() &&
-      !finalParsed.endsWith("\n")
-    ) {
-      process.stdout.write("\n");
-    }
-    return { ...result, parsed: finalParsed };
   } catch (error) {
     if (
       process.env[CODEX_TRANSPORT_ENV] !== CODEX_TRANSPORT_EXEC &&
@@ -445,6 +474,7 @@ const defaultRunLegacyAgent: LegacyAgentRunner = (
 
 export const runnerInternals = {
   reset(): void {
+    fallbackWarned = false;
     runnerState.useAppServer = () => useAppServer();
     runnerState.runLegacyAgent = defaultRunLegacyAgent;
   },
