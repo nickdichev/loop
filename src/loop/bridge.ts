@@ -14,6 +14,8 @@ import { buildLaunchArgv } from "./launch";
 import {
   appendRunTranscriptEntry,
   buildTranscriptPath,
+  isActiveRunState,
+  parseRunLifecycleState,
   readRunManifest,
 } from "./run-state";
 import type { Agent } from "./types";
@@ -74,6 +76,7 @@ interface BridgeStatus {
   codexThreadId: string;
   pending: { claude: number; codex: number };
   runId: string;
+  state: string;
   status: string;
   tmuxSession: string;
 }
@@ -278,6 +281,7 @@ const readBridgeStatus = (runDir: string): BridgeStatus => {
     codexThreadId: manifest?.codexThreadId ?? "",
     pending: countPendingMessages(runDir),
     runId: manifest?.runId ?? "",
+    state: manifest?.state ?? "unknown",
     status: manifest?.status ?? "unknown",
     tmuxSession: manifest?.tmuxSession ?? "",
   };
@@ -1018,7 +1022,8 @@ export const runBridgeMcpServer = async (
 export const runBridgeWorker = async (runDir: string): Promise<void> => {
   while (true) {
     const status = readBridgeStatus(runDir);
-    if (status.status !== "running") {
+    const state = parseRunLifecycleState(status.state);
+    if (!(state && isActiveRunState(state))) {
       return;
     }
     if (!(status.tmuxSession && tmuxSessionExists(status.tmuxSession))) {
